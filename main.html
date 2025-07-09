@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>单词小镇 - LexiLand</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></link>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', 'Noto Sans SC', sans-serif;
+            touch-action: manipulation; /* 禁用双击缩放 */
+        }
+        .town-grid {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            grid-template-rows: repeat(10, 1fr);
+            gap: 4px;
+            width: 100%;
+            height: 100%;
+            aspect-ratio: 1 / 1;
+            max-width: 80vh;
+            max-height: 80vh;
+            margin: auto;
+            background-image: linear-gradient(to right, #a7d7a9 1px, transparent 1px), linear-gradient(to bottom, #a7d7a9 1px, transparent 1px);
+            background-size: 10% 10%;
+            background-color: #c8e6c9; /* 浅绿色草地 */
+            border: 4px solid #81c784;
+            border-radius: 12px;
+        }
+        .town-cell {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .town-cell:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+        .building {
+            width: 100%;
+            height: 100%;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            pointer-events: none;
+            animation: building-place 0.3s ease-out;
+        }
+        .nav-item.active {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 100;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 90%;
+            max-width: 500px;
+            border-radius: 12px;
+            animation: slide-up 0.3s ease-out;
+        }
+        .plant-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+            /* 为动画准备 */
+            opacity: 0;
+            transform: scale(0.9);
+            animation: card-appear 0.4s ease-out forwards;
+        }
+        .plant-card:hover {
+            transform: translateY(-5px) scale(1.02);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .resource-icon {
+            width: 24px;
+            height: 24px;
+            filter: drop-shadow(1px 1px 1px rgba(0,0,0,0.3));
+        }
+        .btn {
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .btn:active {
+            transform: scale(0.95);
+        }
+        
+        /* 动画 Keyframes */
+        @keyframes slide-up {
+            from { transform: translateY(30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes card-appear {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes resource-pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.25); }
+            100% { transform: scale(1); }
+        }
+        @keyframes building-place {
+            from { opacity: 0; transform: translateY(-20px) scale(0.8); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        
+        /* 动画辅助类 */
+        .animate-pop {
+            animation: resource-pop 0.5s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div id="app" class="max-w-3xl mx-auto h-screen flex flex-col">
+        <!-- 顶部资源栏 -->
+        <header class="p-2 bg-white shadow-md z-10">
+            <div class="flex justify-between items-center">
+                <h1 class="text-xl font-bold text-green-700">单词小镇</h1>
+                <div id="resources" class="flex items-center space-x-4">
+                    <div class="flex items-center"><img src="https://placehold.co/24x24/8d6e63/ffffff?text=W" class="resource-icon rounded-full"> <span id="wood" class="ml-1 font-semibold">0</span></div>
+                    <div class="flex items-center"><img src="https://placehold.co/24x24/bdbdbd/ffffff?text=S" class="resource-icon rounded-full"> <span id="stone" class="ml-1 font-semibold">0</span></div>
+                    <div class="flex items-center"><img src="https://placehold.co/24x24/4fc3f7/ffffff?text=C" class="resource-icon rounded-full"> <span id="crystal" class="ml-1 font-semibold">0</span></div>
+                </div>
+            </div>
+             <div id="user-info" class="text-xs text-gray-500 mt-1 truncate">用户ID: <span id="user-id">加载中...</span></div>
+        </header>
+
+        <!-- 主内容区 -->
+        <main class="flex-grow overflow-y-auto p-4">
+            <div id="town-view" class="hidden">
+                <h2 class="text-lg font-semibold mb-2 text-center">我的小镇</h2>
+                <div id="town-grid" class="town-grid"></div>
+            </div>
+            <div id="garden-view">
+                <h2 class="text-lg font-semibold mb-2">记忆花园 <span id="review-count-badge" class="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">0</span></h2>
+                <div id="garden-plants" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                    <!-- 单词植物卡片将在这里生成 -->
+                </div>
+            </div>
+            <div id="learn-view" class="hidden">
+                <h2 class="text-lg font-semibold mb-2">学习中心</h2>
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <p class="mb-4">今天来学习一些新单词吧！</p>
+                    <button id="learn-new-words-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg btn">领取 10 个新单词种子</button>
+                </div>
+            </div>
+            <div id="shop-view" class="hidden">
+                <h2 class="text-lg font-semibold mb-2">建筑商店</h2>
+                <div id="shop-items" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    <!-- 商店物品将在这里生成 -->
+                </div>
+            </div>
+        </main>
+
+        <!-- 底部导航 -->
+        <nav class="grid grid-cols-4 gap-1 p-1 bg-white shadow-t-md">
+            <button data-view="town-view" class="nav-item p-2 rounded-lg text-center"><i class="fas fa-home"></i><span class="block text-xs">小镇</span></button>
+            <button data-view="garden-view" class="nav-item p-2 rounded-lg text-center active"><i class="fas fa-leaf"></i><span class="block text-xs">花园</span></button>
+            <button data-view="learn-view" class="nav-item p-2 rounded-lg text-center"><i class="fas fa-book"></i><span class="block text-xs">学习</span></button>
+            <button data-view="shop-view" class="nav-item p-2 rounded-lg text-center"><i class="fas fa-store"></i><span class="block text-xs">商店</span></button>
+        </nav>
+    </div>
+
+    <!-- 复习模态框 -->
+    <div id="review-modal" class="modal">
+        <div class="modal-content">
+            <h3 class="text-xl font-bold mb-4 text-center" id="review-word"></h3>
+            <p class="text-gray-600 text-center mb-2" id="review-phonetic"></p>
+            <div id="review-options" class="grid grid-cols-1 sm:grid-cols-2 gap-2 my-4"></div>
+            <div id="review-feedback" class="mt-4 p-2 rounded-lg text-center font-semibold"></div>
+            <button id="review-next-btn" class="hidden w-full mt-4 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg btn">下一个</button>
+        </div>
+    </div>
+    
+    <!-- 学习模态框 -->
+    <div id="learn-modal" class="modal">
+        <div class="modal-content">
+            <h3 class="text-2xl font-bold mb-2 text-center" id="learn-word"></h3>
+            <p class="text-gray-600 text-center mb-2" id="learn-phonetic"></p>
+            <p class="text-lg text-center my-4" id="learn-definition"></p>
+            <p class="italic text-gray-500 text-center" id="learn-example"></p>
+            <button id="learn-next-btn" class="w-full mt-6 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg btn">我记住了！</button>
+        </div>
+    </div>
+
+    <!-- 消息提示框 -->
+    <div id="toast" class="hidden fixed bottom-20 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded-lg shadow-lg transition-opacity duration-300">
+        <p id="toast-message"></p>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, onSnapshot, query, where, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- 配置和初始化 ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "AIza...", authDomain: "...", projectId: "..." };
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'lexiland-pwa-default';
+        
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let userId = null;
+        let userData = null;
+        let userWords = new Map();
+        let townData = null;
+
+        // --- 核心数据 ---
+        const OXFORD_WORDS_SAMPLE = [
+            { "word": "ability", "phonetic": "/əˈbɪləti/", "definition": "n. 能力；才能", "example": "He has the ability to do the work." },
+            { "word": "abroad", "phonetic": "/əˈbrɔːd/", "definition": "adv. 在国外；到海外", "example": "She has never been abroad." },
+            { "word": "accept", "phonetic": "/əkˈsept/", "definition": "v. 接受；同意", "example": "I accept your invitation." },
+            { "word": "accident", "phonetic": "/ˈæksɪdənt/", "definition": "n. 事故；意外", "example": "He had an accident at work." },
+            { "word": "achieve", "phonetic": "/əˈtʃiːv/", "definition": "v. 实现；达到", "example": "You can achieve anything you want." },
+            { "word": "action", "phonetic": "/ˈækʃn/", "definition": "n. 行动；作用", "example": "Actions speak louder than words." },
+            { "word": "active", "phonetic": "/ˈæktɪv/", "definition": "adj. 积极的；活跃的", "example": "She is a very active person." },
+            { "word": "activity", "phonetic": "/ækˈtɪvəti/", "definition": "n. 活动；活跃", "example": "Physical activity is good for your health." },
+            { "word": "actually", "phonetic": "/ˈæktʃuəli/", "definition": "adv. 实际上；事实上", "example": "He looks young, but he's actually 50." },
+            { "word": "address", "phonetic": "/əˈdres/", "definition": "n. 地址；演说", "example": "What's your email address?" },
+            // ... 可以添加更多单词
+        ];
+        
+        // --- 洗牌函数，用于打乱单词顺序 ---
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        // 为实现乱序学习，打乱单词数组
+        shuffleArray(OXFORD_WORDS_SAMPLE);
+
+        const REVIEW_INTERVALS = [
+            5 * 60 * 1000,          // LV1: 5 分钟
+            30 * 60 * 1000,         // LV2: 30 分钟
+            12 * 60 * 60 * 1000,    // LV3: 12 小时
+            24 * 60 * 60 * 1000,    // LV4: 1 天
+            3 * 24 * 60 * 60 * 1000,// LV5: 3 天
+            7 * 24 * 60 * 60 * 1000,// LV6: 7 天
+            15 * 24 * 60 * 60 * 1000// LV7: 15 天
+        ];
+        const MAX_LEVEL = 7;
+
+        const SHOP_ITEMS = [
+            { id: 'house', name: '小房子', icon: '🏠', cost: { wood: 5, stone: 2 } },
+            { id: 'tree', name: '树', icon: '🌳', cost: { wood: 2 } },
+            { id: 'shop', name: '商店', icon: '🏪', cost: { wood: 10, stone: 10 } },
+            { id: 'fountain', name: '喷泉', icon: '⛲', cost: { stone: 15, crystal: 5 } },
+            { id: 'flower', name: '花', icon: '🌸', cost: { crystal: 2 } },
+        ];
+
+        // --- UI 元素 ---
+        const views = {
+            'town-view': document.getElementById('town-view'),
+            'garden-view': document.getElementById('garden-view'),
+            'learn-view': document.getElementById('learn-view'),
+            'shop-view': document.getElementById('shop-view'),
+        };
+        const navItems = document.querySelectorAll('.nav-item');
+        const reviewModal = document.getElementById('review-modal');
+        const learnModal = document.getElementById('learn-modal');
+        const toastEl = document.getElementById('toast');
+        const userIdEl = document.getElementById('user-id');
+
+        // --- 认证和数据初始化 ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                userIdEl.textContent = userId;
+                await initializeUserData();
+                setupListeners();
+                renderAll();
+            } else {
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                         await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                         await signInAnonymously(auth);
+                    }
+                } catch (error) {
+                    console.error("Authentication failed:", error);
+                    userIdEl.textContent = "认证失败，请刷新重试";
+                }
+            }
+        });
+
+        async function initializeUserData() {
+            const userRef = doc(db, `artifacts/${appId}/users`, userId);
+            const userSnap = await getDoc(userRef);
+            if (!userSnap.exists()) {
+                const initialData = {
+                    resources: { wood: 0, stone: 0, crystal: 0 },
+                    createdAt: serverTimestamp()
+                };
+                await setDoc(userRef, initialData);
+                userData = initialData;
+                
+                const townRef = doc(db, `artifacts/${appId}/public/data/towns`, userId);
+                const initialTown = { grid: Array(100).fill(null) };
+                await setDoc(townRef, initialTown);
+                townData = initialTown;
+
+            } else {
+                userData = userSnap.data();
+            }
+        }
+        
+        function setupListeners() {
+            // 监听用户资源
+            onSnapshot(doc(db, `artifacts/${appId}/users`, userId), (docSnap) => {
+                if (docSnap.exists()) {
+                    userData = docSnap.data();
+                    renderResources();
+                }
+            });
+
+            // 监听用户单词
+            const wordsQuery = collection(db, `artifacts/${appId}/users/${userId}/words`);
+            onSnapshot(wordsQuery, (querySnapshot) => {
+                querySnapshot.docChanges().forEach((change) => {
+                    const wordData = change.doc.data();
+                    if (change.type === "added" || change.type === "modified") {
+                        userWords.set(change.doc.id, { id: change.doc.id, ...wordData });
+                    }
+                    if (change.type === "removed") {
+                        userWords.delete(change.doc.id);
+                    }
+                });
+                renderGarden();
+            });
+            
+            // 监听小镇布局
+            const townRef = doc(db, `artifacts/${appId}/public/data/towns`, userId);
+            onSnapshot(townRef, (docSnap) => {
+                if(docSnap.exists()) {
+                    townData = docSnap.data();
+                    renderTown();
+                }
+            });
+        }
+
+        // --- 渲染函数 ---
+        function renderAll() {
+            renderResources();
+            renderGarden();
+            renderTown();
+            renderShop();
+        }
+
+        function renderResources() {
+            if (!userData) return;
+            document.getElementById('wood').textContent = userData.resources.wood || 0;
+            document.getElementById('stone').textContent = userData.resources.stone || 0;
+            document.getElementById('crystal').textContent = userData.resources.crystal || 0;
+        }
+
+        function renderGarden() {
+            const gardenPlants = document.getElementById('garden-plants');
+            const reviewCountBadge = document.getElementById('review-count-badge');
+            gardenPlants.innerHTML = '';
+            let reviewCount = 0;
+            
+            const sortedWords = Array.from(userWords.values()).sort((a,b) => (a.nextReview?.toMillis() || 0) - (b.nextReview?.toMillis() || 0));
+
+            sortedWords.forEach((word, index) => {
+                const isDue = word.nextReview && word.nextReview.toMillis() <= Date.now();
+                if (isDue) reviewCount++;
+
+                const card = document.createElement('div');
+                card.className = `plant-card p-3 rounded-lg shadow cursor-pointer ${isDue ? 'bg-yellow-200 border-yellow-400' : 'bg-white'}`;
+                card.dataset.wordId = word.id;
+                // 为卡片添加交错动画延迟
+                card.style.animationDelay = `${index * 50}ms`;
+                
+                const levelIcon = '💧'.repeat(word.memoryLevel);
+                card.innerHTML = `
+                    <h4 class="font-bold text-lg">${word.word}</h4>
+                    <p class="text-sm text-gray-500">等级: ${word.memoryLevel}</p>
+                    <div class="text-xs mt-1">${levelIcon}</div>
+                    <p class="text-xs text-gray-400 mt-2">${isDue ? '该浇水啦！' : `下次复习: ${new Date(word.nextReview.toMillis()).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'numeric', minute:'numeric'})}`}</p>
+                `;
+                if(isDue) {
+                    card.onclick = () => startReviewSession();
+                } else {
+                    card.onclick = () => showToast(`“${word.word}”还没到复习时间哦`);
+                }
+                gardenPlants.appendChild(card);
+            });
+            
+            reviewCountBadge.textContent = reviewCount;
+            reviewCountBadge.classList.toggle('hidden', reviewCount === 0);
+
+            if (userWords.size === 0) {
+                 gardenPlants.innerHTML = `<div class="col-span-full text-center text-gray-500 p-8">你的花园还是空的，快去“学习”页面播种吧！</div>`;
+            }
+        }
+        
+        function renderTown() {
+            const townGrid = document.getElementById('town-grid');
+            townGrid.innerHTML = '';
+            if (!townData) return;
+            
+            for (let i = 0; i < 100; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'town-cell';
+                cell.dataset.index = i;
+                const buildingData = townData.grid[i];
+                if (buildingData) {
+                    const buildingEl = document.createElement('div');
+                    buildingEl.className = 'building';
+                    buildingEl.textContent = buildingData.icon;
+                    cell.appendChild(buildingEl);
+                } else {
+                    cell.onclick = () => placeBuilding(i);
+                }
+                townGrid.appendChild(cell);
+            }
+        }
+
+        function renderShop() {
+            const shopItems = document.getElementById('shop-items');
+            shopItems.innerHTML = '';
+            SHOP_ITEMS.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'bg-white p-3 rounded-lg shadow text-center cursor-pointer plant-card';
+                card.onclick = () => selectBuilding(item.id);
+                
+                const costHtml = Object.entries(item.cost).map(([res, val]) => {
+                    const icon = res === 'wood' ? 'W' : res === 'stone' ? 'S' : 'C';
+                    const color = res === 'wood' ? '8d6e63' : res === 'stone' ? 'bdbdbd' : '4fc3f7';
+                    return `<div class="flex items-center justify-center text-sm"><img src="https://placehold.co/16x16/${color}/ffffff?text=${icon}" class="rounded-full mr-1">${val}</div>`;
+                }).join('');
+
+                card.innerHTML = `
+                    <div class="text-4xl">${item.icon}</div>
+                    <h4 class="font-semibold mt-1">${item.name}</h4>
+                    <div class="flex justify-center space-x-2 mt-1">${costHtml}</div>
+                `;
+                shopItems.appendChild(card);
+            });
+        }
+
+        // --- 游戏逻辑 ---
+        
+        // 学习
+        document.getElementById('learn-new-words-btn').onclick = async () => {
+            const learnedWords = Array.from(userWords.keys());
+            const newWords = OXFORD_WORDS_SAMPLE.filter(w => !learnedWords.includes(w.word)).slice(0, 10);
+
+            if (newWords.length === 0) {
+                showToast("恭喜！你已学完所有示例单词！");
+                return;
+            }
+            
+            let currentLearnIndex = 0;
+            function showNextLearnWord() {
+                if (currentLearnIndex >= newWords.length) {
+                    learnModal.style.display = 'none';
+                    showToast(`成功播种 ${newWords.length} 个新单词！`);
+                    addNewWordsToDb(newWords);
+                    return;
+                }
+                const word = newWords[currentLearnIndex];
+                document.getElementById('learn-word').textContent = word.word;
+                document.getElementById('learn-phonetic').textContent = word.phonetic;
+                document.getElementById('learn-definition').textContent = word.definition;
+                document.getElementById('learn-example').textContent = word.example;
+                learnModal.style.display = 'flex';
+                currentLearnIndex++;
+            }
+            
+            document.getElementById('learn-next-btn').onclick = showNextLearnWord;
+            showNextLearnWord();
+        };
+
+        async function addNewWordsToDb(words) {
+            const batch = writeBatch(db);
+            words.forEach(word => {
+                const wordRef = doc(db, `artifacts/${appId}/users/${userId}/words`, word.word);
+                batch.set(wordRef, {
+                    word: word.word,
+                    phonetic: word.phonetic,
+                    definition: word.definition,
+                    example: word.example,
+                    memoryLevel: 1,
+                    nextReview: new Date(Date.now() + REVIEW_INTERVALS[0]),
+                    lastReviewed: serverTimestamp()
+                });
+            });
+            await batch.commit();
+        }
+
+        // 复习
+        let reviewQueue = [];
+        let currentReviewWord = null;
+
+        function startReviewSession() {
+            reviewQueue = Array.from(userWords.values()).filter(w => w.nextReview && w.nextReview.toMillis() <= Date.now());
+            if (reviewQueue.length === 0) {
+                showToast("没有需要复习的单词了！");
+                return;
+            }
+            showNextReviewWord();
+        }
+
+        function showNextReviewWord() {
+            if (reviewQueue.length === 0) {
+                reviewModal.style.display = 'none';
+                showToast("本次复习完成！");
+                return;
+            }
+
+            currentReviewWord = reviewQueue.shift();
+            const options = generateReviewOptions(currentReviewWord);
+
+            document.getElementById('review-word').textContent = currentReviewWord.word;
+            document.getElementById('review-phonetic').textContent = currentReviewWord.phonetic;
+            const optionsContainer = document.getElementById('review-options');
+            optionsContainer.innerHTML = '';
+            options.forEach(opt => {
+                const button = document.createElement('button');
+                button.className = 'p-3 bg-gray-200 hover:bg-gray-300 rounded-lg btn';
+                button.textContent = opt.definition;
+                button.onclick = () => checkAnswer(opt.isCorrect);
+                optionsContainer.appendChild(button);
+            });
+            
+            document.getElementById('review-feedback').innerHTML = '';
+            document.getElementById('review-next-btn').style.display = 'none';
+            reviewModal.style.display = 'flex';
+        }
+
+        function generateReviewOptions(correctWord) {
+            let options = [{ definition: correctWord.definition, isCorrect: true }];
+            const distractors = Array.from(userWords.values())
+                .filter(w => w.word !== correctWord.word)
+                .sort(() => 0.5 - Math.random())
+                .slice(0, 3);
+            
+            distractors.forEach(d => options.push({ definition: d.definition, isCorrect: false }));
+            
+            // 如果单词不够，用牛津词库的词来补充
+            if (options.length < 4) {
+                 const extraDistractors = OXFORD_WORDS_SAMPLE
+                    .filter(w => w.word !== correctWord.word && !distractors.some(d => d.word === w.word))
+                    .sort(() => 0.5 - Math.random())
+                    .slice(0, 4 - options.length);
+                extraDistractors.forEach(d => options.push({ definition: d.definition, isCorrect: false }));
+            }
+
+            return options.sort(() => 0.5 - Math.random());
+        }
+
+        async function checkAnswer(isCorrect) {
+            const feedbackEl = document.getElementById('review-feedback');
+            document.querySelectorAll('#review-options button').forEach(b => b.disabled = true);
+            
+            let newLevel = currentReviewWord.memoryLevel;
+            if (isCorrect) {
+                feedbackEl.textContent = '正确！';
+                feedbackEl.className = 'mt-4 p-2 rounded-lg text-center font-semibold bg-green-200 text-green-800';
+                newLevel = Math.min(newLevel + 1, MAX_LEVEL);
+            } else {
+                feedbackEl.textContent = `错误。正确答案: ${currentReviewWord.definition}`;
+                feedbackEl.className = 'mt-4 p-2 rounded-lg text-center font-semibold bg-red-200 text-red-800';
+                newLevel = Math.max(1, newLevel - 1);
+            }
+
+            const wordRef = doc(db, `artifacts/${appId}/users/${userId}/words`, currentReviewWord.word);
+            
+            if (newLevel >= MAX_LEVEL) {
+                // 单词掌握，收获资源
+                const woodGained = 2;
+                const stoneGained = 1;
+                showToast(`🎉 掌握单词 "${currentReviewWord.word}"! +${woodGained}木材, +${stoneGained}石头`, 3000);
+                
+                // 触发资源动画
+                const woodEl = document.getElementById('wood').parentElement;
+                const stoneEl = document.getElementById('stone').parentElement;
+                woodEl.classList.add('animate-pop');
+                stoneEl.classList.add('animate-pop');
+                setTimeout(() => {
+                    woodEl.classList.remove('animate-pop');
+                    stoneEl.classList.remove('animate-pop');
+                }, 500);
+
+                const userRef = doc(db, `artifacts/${appId}/users`, userId);
+                const newResources = {
+                    wood: (userData.resources.wood || 0) + woodGained,
+                    stone: (userData.resources.stone || 0) + stoneGained
+                };
+                await updateDoc(userRef, { resources: newResources });
+                await updateDoc(wordRef, { memoryLevel: MAX_LEVEL, nextReview: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) }); // 30天后再次出现
+            } else {
+                const nextReviewDate = new Date(Date.now() + REVIEW_INTERVALS[newLevel - 1]);
+                await updateDoc(wordRef, { memoryLevel: newLevel, nextReview: nextReviewDate });
+            }
+            
+            document.getElementById('review-next-btn').style.display = 'block';
+        }
+        
+        document.getElementById('review-next-btn').onclick = showNextReviewWord;
+        
+        // 建造
+        let selectedBuildingId = null;
+
+        function selectBuilding(itemId) {
+            selectedBuildingId = itemId;
+            showToast(`已选择 ${SHOP_ITEMS.find(i=>i.id === itemId).name}。请到“小镇”视图点击空地放置。`);
+            switchView('town-view');
+        }
+
+        async function placeBuilding(index) {
+            if (!selectedBuildingId) {
+                showToast("请先在商店选择一个建筑");
+                return;
+            }
+            
+            if (townData.grid[index]) {
+                showToast("这里已经有建筑了");
+                return;
+            }
+
+            const item = SHOP_ITEMS.find(i => i.id === selectedBuildingId);
+            const resources = userData.resources;
+
+            // 检查资源
+            for (const [res, cost] of Object.entries(item.cost)) {
+                if ((resources[res] || 0) < cost) {
+                    showToast(`资源不足！需要 ${cost} ${res}`);
+                    return;
+                }
+            }
+
+            // 扣除资源并更新小镇
+            const newResources = { ...resources };
+            for (const [res, cost] of Object.entries(item.cost)) {
+                newResources[res] -= cost;
+            }
+            
+            const newGrid = [...townData.grid];
+            newGrid[index] = { id: item.id, icon: item.icon };
+
+            const userRef = doc(db, `artifacts/${appId}/users`, userId);
+            const townRef = doc(db, `artifacts/${appId}/public/data/towns`, userId);
+            
+            const batch = writeBatch(db);
+            batch.update(userRef, { resources: newResources });
+            batch.update(townRef, { grid: newGrid });
+            await batch.commit();
+
+            showToast(`成功建造 ${item.name}!`);
+            selectedBuildingId = null;
+        }
+
+        // --- 工具函数和事件监听 ---
+        function switchView(viewId) {
+            Object.values(views).forEach(v => {
+                if (v) v.classList.add('hidden')
+            });
+            if (views[viewId]) {
+                views[viewId].classList.remove('hidden');
+            }
+
+            navItems.forEach(item => {
+                item.classList.toggle('active', item.dataset.view === viewId);
+            });
+        }
+
+        navItems.forEach(item => {
+            item.addEventListener('click', () => switchView(item.dataset.view));
+        });
+
+        let toastTimer;
+        function showToast(message, duration = 2000) {
+            const toastMessage = document.getElementById('toast-message');
+            toastMessage.textContent = message;
+            toastEl.classList.remove('hidden');
+            toastEl.classList.add('opacity-100');
+            
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toastEl.classList.remove('opacity-100');
+                toastEl.classList.add('hidden');
+            }, duration);
+        }
+
+        // 默认视图
+        switchView('garden-view');
+
+    </script>
+</body>
+</html>
